@@ -7,8 +7,9 @@ dependencies = [
     "numpy>=2.4.6",
     "pandas>=3.0.3",
     "pyodbc>=5.0.0",
+    "requests>=2.31.0",
 ]
 
 [[tool.uv.index]]
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
-default = true
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"
