@@ -1,0 +1,14 @@
+[project]
+name = "graphrisk-demo"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "faker>=20.0.0",
+    "numpy>=2.4.6",
+    "pandas>=3.0.3",
+    "pyodbc>=5.0.0",
+]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
