@@ -1,0 +1,810 @@
+# GraphRisk-Demo — 基于图计算的金融风控分析系统
+
+> **Graph-based Financial Risk Analysis Engine**：从关系型数据到图计算，从风险检测到BI可视化，一条链式分析流水线。
+
+[![Python](https://img.shields.io/badge/Python-3.14-blue?logo=python)](https://www.python.org/)
+[![NetworkX](https://img.shields.io/badge/NetworkX-3.6-green?logo=networkx)](https://networkx.org/)
+[![TuGraph](https://img.shields.io/badge/TuGraph-4.5-orange)](https://tugraph.tech/)
+[![GBase8a](https://img.shields.io/badge/GBase-8a-red)](https://www.gbase.cn/)
+[![FineBI](https://img.shields.io/badge/FineBI-🔗-blue)](https://www.finebi.com/)
+[![License](https://img.shields.io/badge/license-MIT-lightgrey)](./LICENSE)
+
+---
+
+## 一、系统架构总览
+
+本项目构建了一套完整的"**数据生成 → 图建模 → 图算法分析 → 结果入库 → BI可视化**"金融风控数据管道。整体架构如下图所示：
+
+```mermaid
+flowchart TB
+    subgraph Phase1["阶段一：模拟数据生成<br/>to_gbase.py"]
+        Faker["Faker 数据生成器"]
+        subgraph SourceData["GBase8a 源数据表 (fin_risk 库)"]
+            T1["📋 cust_info<br/>客户基础信息表<br/>500 条"]
+            T2["📋 loan_info<br/>贷款信息表<br/>~325 条"]
+            T3["📋 guarantee_info<br/>担保关系表<br/>~130 条"]
+            T4["📋 trans_info<br/>交易流水表<br/>4,000 条"]
+        end
+        Faker --> T1
+        Faker --> T2
+        Faker --> T3
+        Faker --> T4
+    end
+
+    subgraph Phase2["阶段二：图建模与导入<br/>gbase_to_tugraph.py"]
+        GBase2["GBase8a → 数据读取 & 清洗"]
+        subgraph TuGraph["TuGraph 图数据库"]
+            V1(("👤 Customer<br/>顶点：客户"))
+            V2(("💰 Loan<br/>顶点：贷款"))
+            E1["Guarantees<br/>边：A→B 担保关系"]
+            E2["Transfers<br/>边：A→B 资金转账"]
+            E3["BORROW<br/>边：客户→贷款"]
+        end
+        GBase2 --> TuGraph
+    end
+
+    subgraph Phase3["阶段三：图风险分析<br/>tugraph_risk_analysis.py"]
+        TGRead["TuGraph → NetworkX 图构建"]
+        subgraph NX["NetworkX 图分析引擎"]
+            A1["🔍 算法1：担保环检测<br/>SCC + simple_cycles"]
+            A2["🔍 算法2：团伙识别<br/>Louvain 社区发现"]
+            A3["🔍 算法3：多头借贷检测<br/>统计 + 规则分级"]
+            A4["🔍 算法4：交易闭环检测<br/>SCC + simple_cycles"]
+            A5["🔍 算法5：逾期传染分析<br/>BFS 最短路径"]
+            A6["🔍 算法6：关键节点识别<br/>PageRank"]
+        end
+        subgraph ResultTables["GBase8a 结果表"]
+            R1["📊 risk_guarantee_cycle<br/>担保环检测结果"]
+            R2["📊 risk_gang_detect<br/>团伙检测结果"]
+            R3["📊 risk_multi_head<br/>多头借贷结果"]
+            R4["📊 risk_trans_cycle<br/>交易闭环结果"]
+            R5["📊 risk_overdue_contagion<br/>逾期传染结果"]
+        end
+        TGRead --> NX
+        A1 --> R1
+        A2 --> R2
+        A3 --> R3
+        A4 --> R4
+        A5 --> R5
+    end
+
+    subgraph Phase4["阶段四：BI 可视化"]
+        FineBI["FineBI 连接 GBase8a<br/>📈 仪表盘 · 图表 · 报表"]
+    end
+
+    T1 -.-> GBase2
+    T2 -.-> GBase2
+    T3 -.-> GBase2
+    T4 -.-> GBase2
+    R1 --> FineBI
+    R2 --> FineBI
+    R3 --> FineBI
+    R4 --> FineBI
+    R5 --> FineBI
+
+    style Phase1 fill:#1a1a2e,stroke:#e94560,color:#eee
+    style Phase2 fill:#16213e,stroke:#0f3460,color:#eee
+    style Phase3 fill:#0f3460,stroke:#533483,color:#eee
+    style Phase4 fill:#1a1a2e,stroke:#e94560,color:#eee
+    style SourceData fill:#222831,stroke:#00adb5,color:#eee
+    style TuGraph fill:#222831,stroke:#00adb5,color:#eee
+    style NX fill:#222831,stroke:#f5a623,color:#eee
+    style ResultTables fill:#222831,stroke:#00adb5,color:#eee
+```
+
+---
+
+## 二、项目简介
+
+**GraphRisk-Demo** 是一个面向金融机构的风控图分析演示系统。它将传统的关系型数据（客户、贷款、担保、交易流水）转化为**图数据结构**，利用**NetworkX 图算法框架**运行6种风控检测算法，自动识别以下风险模式：
+
+| 序号 | 风险类型 | 检测算法 | 检测目标 |
+|:---:|----------|----------|----------|
+| 1 | 担保环风险 | SCC + simple_cycles | 循环担保、互保套贷 |
+| 2 | 团伙风险 | Louvain 社区发现 | 担保/交易利益共同体 |
+| 3 | 多头借贷风险 | 统计阈值分析 | 过度借贷、共债风险 |
+| 4 | 交易闭环风险 | SCC + simple_cycles | 资金空转、循环走账 |
+| 5 | 逾期传染风险 | BFS 最短路径 | 违约传播链分析 |
+| 6 | 关键节点风险 | PageRank | 网络核心影响力节点 |
+
+最终，所有分析结果自动写入 **GBase8a MPP 数据库**，通过 **FineBI** 连接进行可视化监控与报表呈现。
+
+### 核心价值
+
+- **图视角风控**：将客户之间的担保、交易关系建模为有向图，从网络拓扑角度发现隐藏风险
+- **算法覆盖全面**：集成社区发现、环路检测、路径分析、中心性分析等经典图算法
+- **生产级数据管道**：Python → GBase → TuGraph → NetworkX → GBase → FineBI，端到端自动化
+- **可复现性**：基于 `uv` 锁定的依赖管理，环境一键复现
+
+---
+
+## 三、技术栈
+
+| 组件 | 技术选型 | 版本         | 用途 |
+|------|----------|------------|------|
+| 语言 | Python | 3.14       | 主开发语言 |
+| 依赖管理 | uv | 0.11+      | 虚拟环境与包管理 |
+| 关系数据库 | GBase8a | —          | MPP 数据仓库，存源数据与分析结果 |
+| 图数据库 | TuGraph | 4.5.2      | 蚂蚁集团开源高性能图数据库 |
+| 图算法 | NetworkX + SciPy | 3.6 / 1.17 | 图构建与6种风控算法 |
+| 模拟数据 | Faker | 40+        | 中文模拟数据生成 |
+| 可视化 | FineBI | —          | 帆软BI，连接 GBase8a 做图表分析 |
+| Python驱动 | GBaseConnector | 9.5.0.1    | GBase8a Python 原生驱动（本地内置） |
+
+---
+
+## 四、整体数据流详解
+
+### 4.1 数据流水线时序图
+
+```mermaid
+sequenceDiagram
+    participant P1 as to_gbase.py
+    participant GB as GBase8a<br/>(fin_risk库)
+    participant P2 as gbase_to_tugraph.py
+    participant TG as TuGraph
+    participant P3 as tugraph_risk_analysis.py
+    participant NX as NetworkX
+    participant FB as FineBI
+
+    rect rgb(26, 26, 46)
+    Note over P1,GB: 阶段一：模拟数据写入 GBase
+    P1->>P1: Faker 生成模拟数据
+    P1->>GB: INSERT cust_info (500条)
+    P1->>GB: INSERT loan_info (~325条)
+    P1->>GB: INSERT guarantee_info (~130条)
+    P1->>GB: INSERT trans_info (4000条)
+    end
+
+    rect rgb(22, 33, 62)
+    Note over GB,TG: 阶段二：图建模与数据导入
+    P2->>GB: SELECT 全量数据
+    P2->>P2: 数据清洗 & 类型转换
+    P2->>TG: CREATE Vertex/Edge Labels
+    P2->>TG: CREATE Customer/Loan 顶点
+    P2->>TG: CREATE Guarantees/Transfers/BORROW 边
+    P2->>TG: 验证导入数量
+    end
+
+    rect rgb(15, 52, 96)
+    Note over TG,NX: 阶段三：图风险分析
+    P3->>TG: Cypher 查询读取图数据
+    P3->>NX: 构建担保图 / 交易图 / 复合图
+    NX->>NX: 算法1: 担保环检测 (SCC + Cycles)
+    NX->>NX: 算法2: 团伙识别 (Louvain)
+    NX->>NX: 算法3: 多头借贷 (统计阈值)
+    NX->>NX: 算法4: 交易闭环 (SCC + Cycles)
+    NX->>NX: 算法5: 逾期传染 (BFS)
+    NX->>NX: 算法6: PageRank 关键节点
+    P3->>GB: WRITE 5张风险结果表
+    end
+
+    rect rgb(26, 26, 46)
+    Note over GB,FB: 阶段四：BI 可视化
+    FB->>GB: JDBC 连接读取结果表
+    FB->>FB: 仪表盘 & 图表展示
+    end
+```
+
+### 4.2 阶段一：模拟数据生成 (`to_gbase.py`)
+
+使用 **Faker** 库生成中文模拟金融数据，写入 GBase8a 的4张业务表：
+
+| 操作 | 数据量 | 生成逻辑 |
+|------|:------:|----------|
+| 客户生成 | 500 条 | 50% 个人 / 50% 企业，随机征信评分 300-950 |
+| 贷款生成 | ~325 条 | 65% 客户有贷款记录，20% 概率逾期 |
+| 担保生成 | ~130 条 | 40% 贷款带有担保关系 |
+| 交易生成 | 4,000 条 | 每客户 8 条交易，含还款/拆借/转账等类型 |
+
+数据的关联关系由随机交叉生成，天然形成复杂网络拓扑，为图分析提供了真实业务中常见的关联模式基础。
+
+### 4.3 阶段二：图建模与导入 (`gbase_to_tugraph.py`)
+
+1. **数据读取**：通过 GBaseConnector 驱动从4张表读取全量数据
+2. **数据清洗**：安全类型转换（`_safe_int`、`_safe_float` 等），处理空值与异常
+3. **Schema 创建**：通过 TuGraph Cypher 存储过程创建 2 类顶点、3 类边及其索引
+4. **数据导入**：逐条通过 `CREATE` 语句导入图数据库
+5. **验证**：统计各顶点/边数量，确认导入完整
+
+### 4.4 阶段三：图风险分析 (`tugraph_risk_analysis.py`)
+
+核心分析引擎，详见[第六章 风控算法详解](#六风控算法详解)。
+
+### 4.5 阶段四：BI可视化
+
+在 FineBI 中配置 GBase8a 数据源连接，读取5张结果表进行可视化分析，构建风控仪表盘。
+
+---
+
+## 五、GBase8a 数据表详解
+
+项目使用数据库 `fin_risk`，共9张表（4张源数据表 + 5张结果表）。
+
+### 5.1 源数据表
+
+#### 📋 cust_info — 客户基础信息表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `cust_id` | BIGINT(20) | **主键**，客户唯一ID |
+| `cust_type` | TINYINT(4) | 客户类型：1=个人，2=企业 |
+| `cust_name` | VARCHAR(64) | 客户名称 |
+| `id_card` | VARCHAR(32) | 身份证号 / 统一社会信用代码 |
+| `phone` | VARCHAR(20) | 联系电话 |
+| `address` | VARCHAR(256) | 居住 / 注册地址 |
+| `credit_score` | INT(11) | 征信评分，范围 300-950 |
+| `register_date` | DATE | 开户 / 注册日期 |
+| `create_time` | DATETIME | 数据创建时间戳 |
+
+> 数据规模：**500 条**
+
+#### 📋 loan_info — 贷款信息表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `loan_id` | BIGINT(20) | **主键**，贷款唯一编号 |
+| `cust_id` | BIGINT(20) | 借款人客户ID，关联 cust_info |
+| `loan_amt` | DECIMAL(18,2) | 贷款金额，范围 1,000 ~ 2,000,000 |
+| `loan_term` | SMALLINT(6) | 贷款期限（月），3 ~ 360 |
+| `rate` | DECIMAL(6,4) | 年化利率，0.03 ~ 0.22 |
+| `loan_type` | TINYINT(4) | 贷款类型：1=经营贷，2=消费贷，3=抵押贷，4=其他 |
+| `start_date` | DATE | 放款日期 |
+| `due_date` | DATE | 到期日期 |
+| `overdue_days` | INT(11) | 逾期天数，0 表示未逾期 |
+| `loan_status` | TINYINT(4) | 贷款状态：0=正常，1=逾期，2=结清，3=坏账 |
+| `create_time` | DATETIME | 数据创建时间戳 |
+
+> 数据规模：**约 325 条**（65% 客户有贷款）
+
+#### 📋 guarantee_info — 担保关系表（图核心边数据）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `guar_id` | BIGINT(20) | **主键**，担保记录唯一ID |
+| `loan_id` | BIGINT(20) | 关联贷款ID |
+| `guar_cust_id` | BIGINT(20) | **担保人**客户ID，关联 cust_info |
+| `borrow_cust_id` | BIGINT(20) | **被担保人（借款人）**客户ID，关联 cust_info |
+| `guar_amt` | DECIMAL(18,2) | 担保金额，范围 5,000 ~ 3,000,000 |
+| `guar_type` | TINYINT(4) | 担保类型：1=连带担保，2=一般担保，3=其他 |
+| `valid_start` | DATE | 担保有效期起始日 |
+| `valid_end` | DATE | 担保有效期截止日 |
+| `create_time` | DATETIME | 数据创建时间戳 |
+
+> 数据规模：**约 130 条**（40% 贷款带担保）
+>
+> ⚠️ 担保关系是担保环检测和团伙识别的核心数据源，`guar_cust_id → borrow_cust_id` 构成有向边。
+
+#### 📋 trans_info — 交易流水表
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `trans_id` | BIGINT(20) | **主键**，交易流水号 |
+| `out_cust_id` | BIGINT(20) | **转出方**客户ID，关联 cust_info |
+| `in_cust_id` | BIGINT(20) | **转入方**客户ID，关联 cust_info |
+| `trans_amt` | DECIMAL(18,2) | 交易金额，范围 1 ~ 500,000 |
+| `trans_type` | TINYINT(4) | 交易类型：1=放款，2=还款，3=转账，4=代收代付，5=其他 |
+| `trans_time` | DATETIME | 交易时间 |
+| `remark` | VARCHAR(256) | 交易备注（还款/拆借/日常转账/货款/投资回款等） |
+| `create_time` | DATETIME | 数据创建时间戳 |
+
+> 数据规模：**4,000 条**（每客户 8 条）
+>
+> ⚠️ 交易关系是交易闭环检测和逾期传染分析的核心数据源，`out_cust_id → in_cust_id` 构成有向边。
+
+### 5.2 结果表
+
+详见[第八章 结果表结构](#八结果表结构)。
+
+---
+
+## 六、TuGraph 图模型
+
+TuGraph 4.5 为**强 Schema 图数据库**，需通过 `CALL db.createVertexLabel` / `CALL db.createEdgeLabel` 存储过程预定义图模型。
+
+### 6.1 顶点类型
+
+#### 👤 Customer（客户顶点）
+
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `cust_id` | INT64 | **主键**，客户唯一ID |
+| `cust_name` | STRING | 客户名称（建索引） |
+| `cust_type` | INT8 | 客户类型：1=个人，2=企业 |
+| `id_card` | STRING | 身份证号/统一社会信用代码 |
+| `phone` | STRING | 联系电话 |
+| `address` | STRING | 地址 |
+| `credit_score` | INT32 | 征信评分 |
+| `register_date` | STRING | 开户日期 |
+| `create_time` | STRING | 创建时间 |
+
+#### 💰 Loan（贷款顶点）
+
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `loan_id` | INT64 | **主键**，贷款唯一编号 |
+| `cust_id` | INT64 | 借款人客户ID |
+| `loan_amt` | DOUBLE | 贷款金额 |
+| `loan_term` | INT16 | 贷款期限（月） |
+| `rate` | DOUBLE | 年化利率 |
+| `loan_type` | INT8 | 贷款类型 |
+| `start_date` | STRING | 放款日期 |
+| `due_date` | STRING | 到期日期 |
+| `overdue_days` | INT32 | 逾期天数 |
+| `loan_status` | INT8 | 贷款状态 |
+
+### 6.2 边类型
+
+| 边标签 | 方向 | 含义 | 关键属性 |
+|--------|------|------|----------|
+| **Guarantees** | Customer → Customer | 担保关系（担保人→被担保人） | `guar_id`, `guar_amt`, `guar_type` |
+| **Transfers** | Customer → Customer | 资金转账（转出方→转入方） | `trans_id`, `trans_amt`, `trans_type`, `trans_time` |
+| **BORROW** | Customer → Loan | 借贷关系（借款人→贷款） | `loan_amt`, `overdue_days`, `loan_status` |
+
+### 6.3 图规模
+
+| 元素 | 数量 |
+|------|:----:|
+| Customer 顶点 | 500 |
+| Loan 顶点 | ~325 |
+| Guarantees 边 | ~130 |
+| Transfers 边 | 4,000 |
+| BORROW 边 | ~325 |
+| **总节点** | **~825** |
+| **总边** | **~4,455** |
+
+---
+
+## 七、风控算法详解
+
+> 本章是本项目的核心章节，详细阐述6种风控检测算法的风险背景、数学原理、实现方式与判定标准。
+
+### 7.1 算法1：担保环检测 (Guarantee Cycle Detection)
+
+#### 风险背景
+
+在金融实务中，**担保圈/担保链**是常见的风险模式。多家企业或个人相互担保，形成闭环：A 为 B 担保，B 为 C 担保，C 为 A 担保。这种模式表面上让每家都获得了贷款，实际上**整个环内没有任何实质信用支撑**，一旦一环断裂，风险会沿环传导，引发连锁违约。
+
+#### 算法原理
+
+将担保关系建模为**有向图** `G_guar = (V, E)`，其中 `V` 为客户节点，有向边 `(u, v)` 表示客户 u 为 v 提供担保。担保环即为图中的**有向环**。
+
+**分步实现：**
+
+1. **强连通分量分解**：调用 `nx.strongly_connected_components(G)` 提取图中所有 SCC。只有大小 ≥ 2 的 SCC 才可能包含环结构
+2. **简单环枚举**：对每个 SCC 子图调用 `nx.simple_cycles(sub_G)` 枚举所有简单环
+3. **去重**：使用 `frozenset(cycle)` 确保每个环只记录一次（避免同一组节点不同起点的重复）
+4. **金额汇总**：遍历环中每条边，累加 `guar_amt` 得到总担保金额
+5. **路径构造**：生成 `custA → custB → custC → custA` 格式的环路径字符串
+
+#### 风险分级
+
+| 风险等级 | 判定条件 | 含义 |
+|:--------:|----------|------|
+| **HIGH** 🔴 | 环长度 ≥ 5 | 长担保链，涉及节点多，风险传导链路长 |
+| **MEDIUM** 🟡 | 3 ≤ 环长度 < 5 | 中等担保环，存在互保风险 |
+| **LOW** 🟢 | 环长度 < 3 | 简单互保，风险相对可控 |
+
+```python
+# 算法核心逻辑摘要
+for scc in nx.strongly_connected_components(G):
+    sub_G = G.subgraph(scc).copy()
+    for cycle in nx.simple_cycles(sub_G):
+        # 去重 → 计算总担保金额 → 按长度分级 → 写入结果
+```
+
+#### 输出结果
+
+写入 `risk_guarantee_cycle` 表，每条记录包含环ID、环长度、成员列表、总担保金额、风险等级等。
+
+---
+
+### 7.2 算法2：团伙检测 (Gang Detection)
+
+#### 风险背景
+
+**团伙风险**是金融风控中的重要防线。多个客户通过相互担保或频繁资金往来形成**利益共同体**，团伙内部成员可能协同骗贷、分散借款规避风控规则、或通过内部交易掩盖不良。图分析能从网络拓扑层面自动发现这些隐性群体。
+
+#### 算法原理
+
+使用经典的 **Louvain 社区发现算法**，将担保网络和交易网络分别作为无向图进行社区划分。
+
+**数学基础：**
+
+Louvain 算法通过最大化**模块度（Modularity）** 来寻找最优社区划分：
+
+$$Q = \frac{1}{2m} \sum_{i,j} \left[ A_{ij} - \frac{k_i k_j}{2m} \right] \delta(c_i, c_j)$$
+
+其中 $A_{ij}$ 为邻接矩阵，$k_i$ 为节点度数，$m$ 为总边数，$c_i$ 为节点 i 所属社区。
+
+**分步实现：**
+
+1. **构建无向图**：分别构建担保无向图 `G_guar` 和交易无向图 `G_trans`
+2. **Louvain 分区**：调用 `nx.community.louvain_communities(G, seed=42)`，固定随机种子确保结果可复现
+3. **降级策略**：若 Louvain 不可用，自动降级为标签传播算法 → 连通分量
+4. **团伙提取**：按社区 ID 分组，成员 ≥ 2 视为有效团伙
+5. **风险评分**：
+   - 担保团伙：`risk_score = min(gang_size / total_gangs × 0.8, 1.0)`
+   - 交易团伙：`risk_score = min(gang_size / total_gangs × 0.6, 1.0)`
+   - 担保团伙权重（0.8）高于交易团伙（0.6），因为担保关系意味着更强的信用绑定
+
+#### 风险判定
+
+| 团伙类型 | 图来源 | 风险含义 |
+|:--------:|--------|----------|
+| **guarantee** | 担保图 | 互保网络中的利益共同体，信用高度关联 |
+| **transaction** | 交易图 | 资金往来密切的群体，可能存在协同操作 |
+
+#### 输出结果
+
+写入 `risk_gang_detect` 表，每条记录包含团伙ID、成员ID、团伙大小、团伙类型、风险评分。
+
+---
+
+### 7.3 算法3：多头借贷检测 (Multi-head Lending)
+
+#### 风险背景
+
+**多头借贷**（共债风险）是指同一借款人在多个渠道同时持有贷款。超过合理偿债能力的多头借贷极易导致违约。传统风控依赖征信报告查询，但在图数据中，**可直接通过 BORROW 边统计每个客户的贷款笔数**，精准定位多头借贷客户。
+
+#### 算法原理
+
+直接在借贷关系数据上进行统计聚合分析：
+
+1. **按客户分组**：将 `borrows` 列表按 `cust_id` 分组，得到每个客户的贷款列表
+2. **统计指标计算**：
+   - 贷款笔数：`len(loans)`
+   - 贷款总额：`sum(loan_amt)`
+   - 逾期笔数：`count(overdue_days > 0)`
+   - 最大逾期天数：`max(overdue_days)`
+
+**阈值设定**：`MULTI_HEAD_THRESHOLD = 3`，即贷款笔数 ≥ 3 视为多头借贷。
+
+#### 风险分级
+
+| 风险等级 | 判定条件 | 含义 |
+|:--------:|----------|------|
+| **HIGH** 🔴 | 笔数 ≥ 10 或最大逾期 > 90天 | 严重多头借贷，已出现长期逾期 |
+| **MEDIUM** 🟡 | 笔数 ≥ 6 或最大逾期 > 30天 | 中度多头借贷，存在还款压力 |
+| **LOW** 🟢 | 笔数 ≥ 3 但未达上述标准 | 轻度多头借贷，需关注 |
+
+#### 输出结果
+
+写入 `risk_multi_head` 表，按贷款笔数降序排列，包含客户ID、名称、笔数、总额、逾期笔数、最大逾期天数、风险等级。
+
+---
+
+### 7.4 算法4：交易闭环检测 (Transaction Cycle Detection)
+
+#### 风险背景
+
+**交易闭环**（资金空转 / 循环走账）是指资金在一组账户间循环流转，最终回到起点。典型场景包括：
+- **洗钱**：通过多层转账掩盖资金来源
+- **虚增流水**：制造虚假交易记录美化报表
+- **套取信贷资金**：通过循环转账套取银行授信
+
+#### 算法原理
+
+与担保环检测采用相同思路，但图来源为**交易有向图** `G_trans = (V, E)`，边 `(u, v)` 表示客户 u 向 v 转账。
+
+**分步实现：**
+
+1. 通过强连通分量提取潜在闭环区域
+2. `nx.simple_cycles()` 枚举所有简单环
+3. 去重、计算总交易金额、构造路径字符串
+
+#### 风险分级
+
+| 风险等级 | 判定条件 | 含义 |
+|:--------:|----------|------|
+| **HIGH** 🔴 | 环长度 ≥ 6 | 长链条资金闭环，洗钱嫌疑高 |
+| **MEDIUM** 🟡 | 4 ≤ 环长度 < 6 | 中等闭环，需关注资金用途 |
+| **LOW** 🟢 | 环长度 < 4 | 短闭环（如A→B→A），风险相对可控 |
+
+> ⚠️ 交易图规模较大（4,000条边），`simple_cycles` 在密集 SCC 中可能产生大量环。生产环境建议增加环长度上限限制。
+
+#### 输出结果
+
+写入 `risk_trans_cycle` 表，包含环ID、环长度、闭环路径、总交易金额、风险等级。
+
+---
+
+### 7.5 算法5：逾期传染分析 (Overdue Contagion Analysis)
+
+#### 风险背景
+
+**逾期传染**是金融网络中的系统性风险。当客户 A 发生逾期，其担保人 B 或因频繁资金往来而关联的客户 C，可能因 A 的违约而受到冲击，进而自身也发生逾期。这种"多米诺效应"在图结构中表现为**逾期节点到正常节点的最短路径距离**。
+
+#### 算法原理
+
+基于**广度优先搜索 (BFS)** 计算每个非逾期客户到最近逾期客户的最短路径距离。
+
+**分步实现：**
+
+1. **构建复合图**：合并担保边和交易边为统一的无向图（传染不考虑方向）
+2. **最短路径计算**：对每个非逾期节点，计算其到所有逾期节点的 `nx.shortest_path_length()`
+3. **传染判定**：`min_dist ≤ OVERDUE_CONTAGION_DISTANCE = 3`，即 3 跳以内的节点视为受传染
+4. **敞口计算**：统计直接相邻的逾期邻居数，并累加关联边的金额
+
+```python
+# 传染检测核心逻辑
+for node in all_nodes - overdue_custs:
+    min_dist = min(shortest_path_length(node, od) for od in overdue_custs)
+    if min_dist <= 3:
+        # 统计逾期邻居 & 计算金额敞口 → 按距离分级
+```
+
+#### 风险分级
+
+| 风险等级 | 判定条件 | 含义 |
+|:--------:|----------|------|
+| **HIGH** 🔴 | 距离 = 1 | 直接与逾期客户相邻，极高传染风险 |
+| **MEDIUM** 🟡 | 距离 = 2 | 间隔 1 个中间节点，较高传染风险 |
+| **LOW** 🟢 | 距离 = 3 | 间隔 2 个中间节点，存在潜在传染风险 |
+
+#### 输出结果
+
+写入 `risk_overdue_contagion` 表，按距离升序排列，包含客户ID、逾期邻居数、金额敞口、最短距离、风险等级。
+
+---
+
+### 7.6 算法6：PageRank 关键节点识别 (Key Node Identification)
+
+#### 风险背景
+
+在担保和交易网络中，某些节点处于网络的**核心位置**：它们或是多笔担保的中心担保人，或是大量资金流转的中转枢纽。这些节点一旦出现问题，对整个网络的冲击远超普通节点。识别这些关键节点有助于**集中监控资源、提前预警**。
+
+#### 算法原理
+
+**PageRank** 算法最初由 Google 用于网页排序，在图分析中用于评估节点的重要性。其核心思想是：
+
+- 一个节点的重要性取决于指向它的其他节点的重要性
+- 被重要节点指向的节点也更重要
+
+**迭代公式：**
+
+$$PR(u) = \frac{1-d}{N} + d \sum_{v \in B_u} \frac{PR(v)}{L(v)}$$
+
+其中 $d = 0.85$（阻尼系数），$B_u$ 为指向 u 的节点集合，$L(v)$ 为 v 的出度。
+
+**分步实现：**
+
+1. 在担保+交易的**复合有向图**上运行 `nx.pagerank(G, alpha=0.85, max_iter=100)`
+2. 按 PageRank 分值降序排序
+3. 输出 Top 20 关键节点
+
+#### 输出方式
+
+⚠️ PageRank 结果**仅控制台打印，不写入数据库**。每个关键节点输出排名、客户ID、名称、PageRank 分值、征信评分。
+
+---
+
+### 7.7 算法总览对比
+
+| 算法 | 输入图 | 核心技术 | 输出表 | 入库 |
+|:----:|--------|----------|--------|:----:|
+| 担保环检测 | 担保有向图 | SCC + simple_cycles | `risk_guarantee_cycle` | ✅ |
+| 团伙检测 | 担保/交易无向图 | Louvain 社区发现 | `risk_gang_detect` | ✅ |
+| 多头借贷 | BORROW 关系 | 统计阈值分析 | `risk_multi_head` | ✅ |
+| 交易闭环 | 交易有向图 | SCC + simple_cycles | `risk_trans_cycle` | ✅ |
+| 逾期传染 | 复合有向图 | BFS 最短路径 | `risk_overdue_contagion` | ✅ |
+| 关键节点 | 复合有向图 | PageRank | — （仅打印） | ❌ |
+
+---
+
+## 八、结果表结构
+
+分析完成后，结果写入 GBase8a 的5张结果表。
+
+### 📊 risk_guarantee_cycle — 担保环检测结果
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `cycle_id` | BIGINT | **主键**，担保环唯一编号 |
+| `cycle_length` | INT | 担保环节点数（环长度） |
+| `cycle_path` | VARCHAR(4096) | 环路径：`custA→custB→…→custA` |
+| `cust_ids` | TEXT | 涉及客户ID列表，逗号分隔 |
+| `total_guar_amt` | DECIMAL(18,2) | 环内担保金额总和 |
+| `risk_level` | VARCHAR(16) | 风险等级：HIGH / MEDIUM / LOW |
+| `detect_time` | DATETIME | 检测时间 |
+
+### 📊 risk_gang_detect — 团伙检测结果
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `gang_id` | BIGINT | **联合主键**，团伙唯一编号 |
+| `cust_id` | BIGINT | **联合主键**，团伙成员客户ID |
+| `cust_name` | VARCHAR(64) | 客户名称 |
+| `gang_size` | INT | 该团伙总人数 |
+| `gang_type` | VARCHAR(32) | 团伙类型：`guarantee` / `transaction` |
+| `risk_score` | DECIMAL(8,4) | 风险评分，0~1，越大风险越高 |
+| `detect_time` | DATETIME | 检测时间 |
+
+### 📊 risk_multi_head — 多头借贷检测结果
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `cust_id` | BIGINT | **主键**，客户ID |
+| `cust_name` | VARCHAR(64) | 客户名称 |
+| `loan_count` | INT | 当前贷款笔数 |
+| `total_loan_amt` | DECIMAL(18,2) | 贷款总额 |
+| `overdue_loan_count` | INT | 其中逾期贷款笔数 |
+| `max_overdue_days` | INT | 最大逾期天数 |
+| `risk_level` | VARCHAR(16) | 风险等级：HIGH / MEDIUM / LOW |
+| `detect_time` | DATETIME | 检测时间 |
+
+### 📊 risk_trans_cycle — 交易闭环检测结果
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `cycle_id` | BIGINT | **主键**，闭环唯一编号 |
+| `cycle_length` | INT | 闭环节点数 |
+| `cycle_path` | VARCHAR(4096) | 闭环路径字符串 |
+| `total_trans_amt` | DECIMAL(18,2) | 闭环交易总额 |
+| `risk_level` | VARCHAR(16) | 风险等级：HIGH / MEDIUM / LOW |
+| `detect_time` | DATETIME | 检测时间 |
+
+### 📊 risk_overdue_contagion — 逾期传染检测结果
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `cust_id` | BIGINT | **主键**，客户ID |
+| `cust_name` | VARCHAR(64) | 客户名称 |
+| `overdue_neighbor_count` | INT | 直接相邻的逾期客户数量 |
+| `total_exposure_amt` | DECIMAL(18,2) | 与逾期客户关联的总金额敞口 |
+| `distance_to_overdue` | INT | 到最近逾期客户的最短路径距离 |
+| `risk_level` | VARCHAR(16) | 风险等级：HIGH / MEDIUM / LOW |
+| `detect_time` | DATETIME | 检测时间 |
+
+---
+
+## 九、快速开始
+
+### 9.1 环境要求
+
+| 依赖 | 版本要求 |
+|------|----------|
+| Python | ≥ 3.14 |
+| uv | ≥ 0.11（Python 包管理器） |
+| GBase8a | 可达（默认 `110.42.238.172:5258`） |
+| TuGraph | 4.5 可达（默认 `110.42.238.172:7070`） |
+
+### 9.2 安装
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/sjtucc/GraphRisk-Demo.git
+cd GraphRisk-Demo
+
+# 2. 创建虚拟环境并安装依赖（uv 自动处理）
+uv sync
+
+# 3. 激活虚拟环境
+# Windows:
+.venv\Scripts\activate
+# Linux/Mac:
+source .venv/bin/activate
+```
+
+### 9.3 初始化 GBase8a
+
+```bash
+# 连接 GBase8a 执行建库建表语句
+# 方式1: 通过 GBase 客户端工具执行 sql/init.sql
+# 方式2: 以 --comments 模式执行（保留 COMMENT 信息）
+gccli -h 110.42.238.172 -P 5258 -u root -p < sql/init.sql
+```
+
+### 9.4 运行流程
+
+按顺序执行以下三个脚本：
+
+```bash
+# 步骤一：生成模拟数据并写入 GBase8a（约 30 秒）
+python to_gbase.py
+# 输出：
+#   客户表插入完成，共500条
+#   贷款表插入完成，共325条
+#   担保表插入完成，共130条
+#   交易表插入完成，共4000条
+
+# 步骤二：从 GBase8a 导入数据到 TuGraph（约 2 分钟）
+python gbase_to_tugraph.py
+# 输出：
+#   步骤1: 从 GBase 读取数据
+#   步骤2: 数据清洗
+#   步骤3: 创建 TuGraph Schema
+#   步骤4: 导入数据
+#   步骤5: 验证导入
+
+# 步骤三：执行风控图分析并写入结果（约 11 分钟）
+python tugraph_risk_analysis.py
+# 输出：
+#   担保环: X 个
+#   团伙成员: X 个
+#   多头借贷: X 个客户
+#   交易闭环: X 个
+#   逾期传染: X 个客户
+#   PageRank: 20 个关键节点
+```
+
+### 9.5 连接配置
+
+三个脚本均内置了数据库连接配置，如需修改请编辑各文件顶部的配置区：
+
+```python
+# to_gbase.py / gbase_to_tugraph.py / tugraph_risk_analysis.py
+# GBase8a 配置
+GBASE_CFG = {
+    "host": "110.42.238.172",
+    "port": 5258,
+    "user": "root",
+    "password": "Chen641219!",
+    "db": "fin_risk",
+    "charset": "utf8"
+}
+
+# TuGraph 配置（仅在 gbase_to_tugraph.py 和 tugraph_risk_analysis.py 中）
+TUGRAPH_CFG = {
+    "host": "110.42.238.172",
+    "rest_port": 7070,
+    "user": "admin",
+    "password": "73@TuGraph",
+    "graph_name": "default",
+    "timeout": 600
+}
+```
+
+### 9.6 FineBI 连接
+
+在 FineBI 中添加 GBase8a 数据源：
+- **数据库类型**：GBase8a（或 Generic JDBC）
+- **连接 URL**：`jdbc:gbase://110.42.238.172:5258/fin_risk`
+- 读取 `risk_*` 系列结果表做可视化分析
+
+---
+
+## 十、目录结构
+
+```
+GraphRisk-Demo/
+├── to_gbase.py                     # ① 模拟数据生成 & 写入 GBase8a
+├── gbase_to_tugraph.py             # ② GBase8a → TuGraph 图建模 & 导入
+├── tugraph_risk_analysis.py        # ③ 图风险分析核心引擎
+├── sql/
+│   └── init.sql                    # GBase8a 建库建表 DDL
+├── doc/
+│   └── tugraph_risk_analysis.py执行结果  # 运行日志样例
+├── GBasePython3-9.5.0.1_build4/    # GBase8a Python 驱动（本地内置）
+│   └── GBaseConnector/             #   连接器核心模块
+├── pyproject.toml                  # uv 项目配置 & 依赖声明
+├── uv.lock                         # 依赖锁定文件
+├── README.md                       # 本文档
+└── .gitignore
+```
+
+---
+
+## 十一、关键依赖
+
+| 依赖包 | 用途 |
+|--------|------|
+| `faker >= 20.0` | 中文模拟数据生成（客户名、地址、身份证号等） |
+| `networkx >= 3.5` | 图构建与图算法（SCC、Louvain、PageRank、BFS 等） |
+| `pandas >= 3.0` | 数据处理与清洗 |
+| `numpy >= 2.4` | 数值计算 |
+| `scipy >= 1.16` | 科学计算（部分算法底层依赖） |
+| `requests >= 2.31` | TuGraph REST API 的 HTTP 通信 |
+| `pyodbc >= 5.0` | ODBC 数据库连接 |
+
+---
+
+## 十二、许可证
+
+MIT License
+
+---
+
+> 📧 项目仓库：[github.com/sjtucc/GraphRisk-Demo](https://github.com/sjtucc/GraphRisk-Demo)
+>
+> 🏗️ 技术栈：Python · NetworkX · TuGraph · GBase8a · FineBI
